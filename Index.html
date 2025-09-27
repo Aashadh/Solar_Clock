@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sun-Clock</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #ffefba, #ffffff);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      margin-bottom: 0.5rem;
+      font-size: 2rem;
+      text-align: center;
+    }
+    #clock {
+      font-size: 5rem;
+      font-weight: bold;
+      margin: 1rem 0;
+    }
+    .controls {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    button, select {
+      font-size: 1rem;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid #aaa;
+      cursor: pointer;
+      background: #fff;
+    }
+    #infoBox {
+      max-width: 600px;
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      display: none;
+    }
+    #sunriseSunset {
+      font-size: 1rem;
+      margin-top: 1rem;
+      color: #444;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌞 Sun-Clock</h1>
+  <div id="clock">--:--:--</div>
+
+  <div class="controls">
+    <select id="modeSelect">
+      <option value="strict">🌍 Strict Natural</option>
+      <option value="balanced">⚖️ Balanced 12/12</option>
+    </select>
+    <button id="infoBtn">❗ Info</button>
+  </div>
+
+  <div id="sunriseSunset"></div>
+  <div id="infoBox">
+    <h2>About Sun-Clock</h2>
+    <p>
+      The Sun-Clock redefines time.  
+      A “day” starts at <b>sunrise</b> and ends at the next <b>sunrise</b>.  
+      Daylight is mapped into <b>AM hours</b>, night into <b>PM hours</b>.  
+    </p>
+    <p>
+      🌍 <b>Strict Natural</b>: AM and PM vary with the seasons.  
+      ⚖️ <b>Balanced</b>: AM and PM are always 12h each, scaled to fit.  
+    </p>
+    <p>
+      This clock follows the Sun — your local sky sets the rhythm, not
+      midnight conventions.
+    </p>
+  </div>
+
+  <script src="https://unpkg.com/suncalc"></script>
+  <script>
+    const clockEl = document.getElementById("clock");
+    const sunriseSunsetEl = document.getElementById("sunriseSunset");
+    const infoBox = document.getElementById("infoBox");
+    const modeSelect = document.getElementById("modeSelect");
+    const infoBtn = document.getElementById("infoBtn");
+
+    infoBtn.addEventListener("click", () => {
+      infoBox.style.display = infoBox.style.display === "none" ? "block" : "none";
+    });
+
+    function pad(n) { return String(n).padStart(2, "0"); }
+
+    function getSunTimes(lat, lon, now=new Date()) {
+      const today = new Date(now);
+      const tomorrow = new Date(now); tomorrow.setDate(today.getDate()+1);
+      const timesToday = SunCalc.getTimes(today, lat, lon);
+      const timesTomorrow = SunCalc.getTimes(tomorrow, lat, lon);
+      return {
+        sunrise: timesToday.sunrise,
+        sunset: timesToday.sunset,
+        nextSunrise: timesTomorrow.sunrise
+      };
+    }
+
+    function getSunClock(now, lat, lon, mode="strict") {
+      const {sunrise, sunset, nextSunrise} = getSunTimes(lat, lon, now);
+      let phase, intervalStart, intervalEnd;
+
+      if (now >= sunrise && now < sunset) {
+        phase = "AM";
+        intervalStart = sunrise; intervalEnd = sunset;
+      } else {
+        phase = "PM";
+        intervalStart = sunset;
+        intervalEnd = (now >= sunset) ? nextSunrise : sunrise;
+      }
+
+      const elapsed = now - intervalStart;
+      const duration = intervalEnd - intervalStart;
+      let fraction = elapsed / duration;
+
+      if (mode === "balanced") {
+        // always stretch to 12h
+        const totalH = 12 * fraction;
+        const hh = Math.floor(totalH);
+        const mm = Math.floor((totalH - hh) * 60);
+        const ss = Math.floor(((totalH - hh) * 60 - mm) * 60);
+        return {time: `${pad(hh)}:${pad(mm)}:${pad(ss)} ${phase}`, sunrise, sunset, nextSunrise};
+      } else {
+        // strict natural: map directly into real interval as 12 "hours"
+        const totalMs = fraction * 12 * 60 * 60 * 1000;
+        const hh = Math.floor(totalMs / (1000*60*60));
+        const mm = Math.floor((totalMs % (1000*60*60)) / (1000*60));
+        const ss = Math.floor((totalMs % (1000*60)) / 1000);
+        return {time: `${pad(hh)}:${pad(mm)}:${pad(ss)} ${phase}`, sunrise, sunset, nextSunrise};
+      }
+    }
+
+    function updateClock(lat, lon) {
+      const now = new Date();
+      const mode = modeSelect.value;
+      const result = getSunClock(now, lat, lon, mode);
+      clockEl.textContent = result.time;
+      sunriseSunsetEl.textContent = 
+        `Sunrise: ${result.sunrise.toLocaleTimeString()} • Sunset: ${result.sunset.toLocaleTimeString()} • Next Sunrise: ${result.nextSunrise.toLocaleTimeString()}`;
+    }
+
+    // Get location
+    function initClock() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          setInterval(() => updateClock(lat, lon), 1000);
+        }, err => {
+          alert("Geolocation failed. Using Kuwait City as default.");
+          const lat = 29.3759, lon = 47.9774;
+          setInterval(() => updateClock(lat, lon), 1000);
+        });
+      } else {
+        const lat = 29.3759, lon = 47.9774;
+        setInterval(() => updateClock(lat, lon), 1000);
+      }
+    }
+
+    initClock();
+  </script>
+</body>
+</html>
